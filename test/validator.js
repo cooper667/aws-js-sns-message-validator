@@ -4,7 +4,6 @@ const chai = require('chai'),
     expect = chai.expect,
     rewire = require('rewire'),
     pem = require('pem'),
-    _ = require('underscore'),
     MessageValidator = rewire('../index.js'),
     signableKeysForSubscription = MessageValidator.__get__('signableKeysForSubscription'),
     invalidMessage = {
@@ -30,15 +29,15 @@ const chai = require('chai'),
         SignatureVersion: '1',
         SigningCertUrl: "https://localhost:56789/cert.pem"
     },
-    validSubscriptionControlMessage = _.extend({}, validMessage, {
+    validSubscriptionControlMessage = Object.assign({}, validMessage, {
         Token: 'Nonce',
         SubscribeURL: 'https://www.amazonaws.com',
         Type: 'SubscriptionConfirmation'
     }),
-    utf8Message = _.extend({}, validMessage, {
+    utf8Message = Object.assign({}, validMessage, {
         Message: 'Ａ Ｍｅｓｓａｇｅ Ｆｏｒ ｙｏｕ！',
     }),
-    utf8SubscriptionControlMessage = _.extend({}, utf8Message, {
+    utf8SubscriptionControlMessage = Object.assign({}, utf8Message, {
         Token: 'Nonce',
         SubscribeURL: 'https://www.amazonaws.com',
         Type: 'SubscriptionConfirmation'
@@ -135,7 +134,7 @@ describe('Message Validator', function () {
         it('should reject hashes with an invalid signature type', async function () {
             try {
                 const message = await (new MessageValidator)
-                .validate(_.extend({}, validMessage, {
+                .validate(Object.assign({}, validMessage, {
                     SignatureVersion: '2',
                     SigningCertURL: validCertUrl
                 }));
@@ -149,7 +148,7 @@ describe('Message Validator', function () {
         it('should attempt to verify the signature of well-structured messages', async function () {
             try {
                 const message = await (new MessageValidator(/^localhost:56789$/))
-                    .validate(_.extend({}, validMessage, {
+                    .validate(Object.assign({}, validMessage, {
                         Signature: (Buffer.from('NOT A VALID SIGNATURE'))
                             .toString('base64')}));
             } catch(err) {
@@ -173,7 +172,7 @@ describe('Message Validator', function () {
         it('should reject subscribe hashes without additional keys', async function () {
             try {
                 const message = await (new MessageValidator(/^localhost:56789$/))
-                    .validate(_.extend({}, validMessage, {
+                    .validate(Object.assign({}, validMessage, {
                         Type: 'SubscriptionConfirmation'
                     }));
             } catch(err) {
