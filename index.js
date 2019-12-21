@@ -1,6 +1,4 @@
-"use strict";
-
-var url = require('url'),
+const url = require('url'),
     https = require('https'),
     crypto = require('crypto'),
     defaultEncoding = 'utf8',
@@ -45,9 +43,9 @@ var url = require('url'),
         'UnsubscribeUrl': 'UnsubscribeURL'
     };
 
-var hashHasKeys = function (hash, keys) {
-    for (var i = 0; i < keys.length; i++) {
-        if (!(keys[i] in hash)) {
+const hashHasKeys = function (hash, keys) {
+    for(const key of keys) {
+        if (!(key in hash)) {
             return false;
         }
     }
@@ -55,18 +53,8 @@ var hashHasKeys = function (hash, keys) {
     return true;
 };
 
-var indexOf = function (array, value) {
-    for (var i = 0; i < array.length; i++) {
-        if (value === array[i]) {
-            return i;
-        }
-    }
-
-    return -1;
-};
-
 function convertLambdaMessage(message) {
-    for (var key in lambdaMessageKeys) {
+    for (const key in lambdaMessageKeys) {
         if (key in message) {
             message[lambdaMessageKeys[key]] = message[key];
         }
@@ -79,85 +67,87 @@ function convertLambdaMessage(message) {
     return message;
 }
 
-var validateMessageStructure = function (message) {
-    var valid = hashHasKeys(message, requiredKeys);
+const validateMessageStructure = function (message) {
+    try {
+        let valid = hashHasKeys(message, requiredKeys);
 
-    if (indexOf(subscriptionControlMessageTypes, message['Type']) > -1) {
-        valid = valid && hashHasKeys(message, subscriptionControlKeys);
-    }
-
-    return valid;
-};
-
-var validateUrl = function (urlToValidate, hostPattern) {
-    var parsed = url.parse(urlToValidate);
-
-    return parsed.protocol === 'https:'
-        && parsed.path.substr(-4) === '.pem'
-        && hostPattern.test(parsed.host);
-};
-
-var getCertificate = function (certUrl, cb) {
-    if (certCache.hasOwnProperty(certUrl)) {
-        cb(null, certCache[certUrl]);
-        return;
-    }
-
-    https.get(certUrl, function (res) {
-        var chunks = [];
-
-        if(res.statusCode !== 200){
-            return cb(new Error('Certificate could not be retrieved'));
+        if (subscriptionControlMessageTypes.includes(message['Type'])) {
+            valid = valid && hashHasKeys(message, subscriptionControlKeys);
         }
 
-        res
-            .on('data', function (data) {
-                chunks.push(data.toString());
-            })
-            .on('end', function () {
-                certCache[certUrl] = chunks.join('');
-                cb(null, certCache[certUrl]);
-            });
-    }).on('error', cb)
+        return valid;
+    } catch {
+        return false;
+    }
 };
 
-var validateSignature = function (message, cb, encoding) {
-    if (message['SignatureVersion'] !== '1') {
-        cb(new Error('The signature version '
-            + message['SignatureVersion'] + ' is not supported.'));
-        return;
+const validateUrl = function (urlToValidate, hostPattern) {
+    try {
+        const parsed = url.parse(urlToValidate);
+
+        return parsed.protocol === 'https:'
+            && parsed.path.substr(-4) === '.pem'
+            && hostPattern.test(parsed.host);
+    } catch {
+        return false;
+    }
+};
+
+const getUrl = function(url) {
+    return new Promise((resolve, reject) => {
+        const request = https.get(url, (response) => {
+            if (response.statusCode < 200 || response.statusCode > 299) {
+                reject(new Error('Failed to load page'));
+            }
+            const body = [];
+            response.on('data', (chunk) => body.push(chunk));
+            response.on('end', () => resolve(body.join('')));
+        });
+        request.on('error', (err) => reject(err))
+    })
+};
+
+let getCertificate = async function (certUrl) {
+    if (certCache.hasOwnProperty(certUrl)) {
+        return [null, certCache[certUrl]];
     }
 
-    var signableKeys = [];
+    try {
+        certCache[certUrl] = await getUrl(certUrl);
+        return [null, certCache[certUrl]];
+    } catch(error) {
+        return [new Error('Certificate could not be retrieved')];
+    }
+};
+
+const validateSignature = async function (message, encoding) {
+    if (message['SignatureVersion'] !== '1') {
+        throw new Error(`The signature version ${message['SignatureVersion']} is not supported.`);
+    }
+
+    let signableKeys;
     if (message.Type === 'SubscriptionConfirmation') {
         signableKeys = signableKeysForSubscription.slice(0);
     } else {
         signableKeys = signableKeysForNotification.slice(0);
     }
 
-    var verifier = crypto.createVerify('RSA-SHA1');
-    for (var i = 0; i < signableKeys.length; i++) {
-        if (signableKeys[i] in message) {
-            verifier.update(signableKeys[i] + "\n"
-                + message[signableKeys[i]] + "\n", encoding);
+    const verifier = crypto.createVerify('RSA-SHA1');
+    for(const key of signableKeys) {
+        if (key in message) {
+            verifier.update(key + "\n"
+                + message[key] + "\n", encoding);
         }
     }
 
-    getCertificate(message['SigningCertURL'], function (err, certificate) {
-        if (err) {
-            cb(err);
-            return;
-        }
-        try {
-            if (verifier.verify(certificate, message['Signature'], 'base64')) {
-                cb(null, message);
-            } else {
-                cb(new Error('The message signature is invalid.'));
-            }
-        } catch (e) {
-            cb(e);
-        }
-    });
+    const [err, certificate] = await getCertificate(message['SigningCertURL']);
+    if(err) throw err;
+
+    if (verifier.verify(certificate, message['Signature'], 'base64')) {
+        return message;
+    } else {
+        throw new Error('The message signature is invalid.');
+    }
 };
 
 /**
@@ -167,50 +157,33 @@ var validateSignature = function (message, cb, encoding) {
  * @param {RegExp} [hostPattern=/^sns\.[a-zA-Z0-9\-]{3,}\.amazonaws\.com(\.cn)?$/] - A pattern used to validate that a message's certificate originates from a trusted domain.
  * @param {String} [encoding='utf8'] - The encoding of the messages being signed.
  */
-function MessageValidator(hostPattern, encoding) {
-    this.hostPattern = hostPattern || defaultHostPattern;
-    this.encoding = encoding || defaultEncoding;
+module.exports = class MessageValidator {
+    constructor(hostPattern, encoding) {
+        this.hostPattern = hostPattern || defaultHostPattern;
+        this.encoding = encoding || defaultEncoding;
+    }
+
+    /**
+     * Validates a message's signature and passes it to the provided callback.
+     *
+     * @param {Object} hash
+     */
+    validate(hash) {
+        const parsedHash = typeof hash === 'string' ? JSON.parse(hash) : hash;
+
+        const convertedHash = convertLambdaMessage(parsedHash);
+
+        if (!validateMessageStructure(convertedHash)) {
+            throw new Error('Message missing required keys.');
+        }
+
+        if (!validateUrl(convertedHash['SigningCertURL'], this.hostPattern)) {
+            throw new Error('The certificate is located on an invalid domain.');
+
+        }
+
+        return validateSignature(convertedHash, this.encoding);
+    };
 }
 
-/**
- * A callback to be called by the validator once it has verified a message's
- * signature.
- *
- * @callback validationCallback
- * @param {Error} error - Any error encountered attempting to validate a
- *                          message's signature.
- * @param {Object} message - The validated inbound SNS message.
- */
 
-/**
- * Validates a message's signature and passes it to the provided callback.
- *
- * @param {Object} hash
- * @param {validationCallback} cb
- */
-MessageValidator.prototype.validate = function (hash, cb) {
-    if (typeof hash === 'string') {
-        try {
-            hash = JSON.parse(hash);
-        } catch (err) {
-            cb(err);
-            return;
-        }
-    }
-
-    hash = convertLambdaMessage(hash);
-
-    if (!validateMessageStructure(hash)) {
-        cb(new Error('Message missing required keys.'));
-        return;
-    }
-
-    if (!validateUrl(hash['SigningCertURL'], this.hostPattern)) {
-        cb(new Error('The certificate is located on an invalid domain.'));
-        return;
-    }
-
-    validateSignature(hash, cb, this.encoding);
-};
-
-module.exports = MessageValidator;
