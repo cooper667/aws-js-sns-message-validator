@@ -34,17 +34,14 @@ The message validator checks the `SigningCertURL`, `SignatureVersion`, and
 `Signature` to make sure they are valid and consistent with the message data.
 
 ```javascript
-var MessageValidator = require('sns-validator'),
+const MessageValidator = require('sns-validator'),
     validator = new MessageValidator();
 
-validator.validate(message, function (err, message) {
-    if (err) {
+    validator.validate(message).then(message => {
+        // message has been validated and its signature checked.
+    }).catch(err => {
         // Your message could not be validated.
-        return;
-    }
-
-    // message has been validated and its signature checked.
-});
+    });
 ```
 
 ## Installation
@@ -84,21 +81,18 @@ In order to handle a `SubscriptionConfirmation` message, you must use the
 `SubscribeURL` value in the incoming message:
 
 ```javascript
-var https = require('https'),
+const https = require('https'),
     MessageValidator = require('sns-validator'),
     validator = new MessageValidator();
 
-validator.validate(message, function (err, message) {
-    if (err) {
-        console.error(err);
-        return;
-    }
-
+validator.validate(message).then(message => {
     if (message['Type'] === 'SubscriptionConfirmation') {
         https.get(message['SubscribeURL'], function (res) {
           // You have confirmed your endpoint subscription
         });
     }
+}).catch(err => {
+    console.error(err);
 });
 ```
 
@@ -106,7 +100,7 @@ If an incoming message includes multibyte characters and its encoding is utf8,
 set the encoding to `validator`.
 
 ```javascript
-var MessageValidator = require('sns-validator'),
+const MessageValidator = require('sns-validator'),
     validator = new MessageValidator();
 validator.encoding = 'utf8';
 ```
@@ -119,7 +113,7 @@ check for the `Notification` message type.
 ```javascript
 if (message['Type'] === 'Notification') {
     // Do whatever you want with the message body and data.
-    console.log(message['MessageId'] + ': ' + message['Message']);
+    console.log(`${message['MessageId']}: ${message['Message']}`);
 }
 ```
 
@@ -135,7 +129,7 @@ Unsubscribing looks the same as subscribing, except the message type will be
 if (message['Type'] === 'UnsubscribeConfirmation') {
     // Unsubscribed in error? You can resubscribe by visiting the endpoint
     // provided as the message's SubscribeURL field.
-    https.get(message['SubscribeURL'], function (res) {
+    https.get(message['SubscribeURL'], (res) => {
         // You have re-subscribed your endpoint.
     });
 }
