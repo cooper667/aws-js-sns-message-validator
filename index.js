@@ -43,15 +43,7 @@ const url = require('url'),
         'UnsubscribeUrl': 'UnsubscribeURL'
     };
 
-const hashHasKeys = function (hash, keys) {
-    for(const key of keys) {
-        if (!(key in hash)) {
-            return false;
-        }
-    }
-
-    return true;
-};
+const hashHasKeys = (hash, keys) => keys.reduce((valid, key) => !(key in hash) ? false : valid, true);
 
 function convertLambdaMessage(message) {
     for (const key in lambdaMessageKeys) {
@@ -109,14 +101,14 @@ const getUrl = function(url) {
 
 let getCertificate = async function (certUrl) {
     if (certCache.hasOwnProperty(certUrl)) {
-        return [null, certCache[certUrl]];
+        return certCache[certUrl];
     }
 
     try {
         certCache[certUrl] = await getUrl(certUrl);
-        return [null, certCache[certUrl]];
+        return certCache[certUrl];
     } catch(error) {
-        return [new Error('Certificate could not be retrieved')];
+        throw new Error('Certificate could not be retrieved');
     }
 };
 
@@ -140,8 +132,7 @@ const validateSignature = async function (message, encoding) {
         }
     }
 
-    const [err, certificate] = await getCertificate(message['SigningCertURL']);
-    if(err) throw err;
+    const certificate = await getCertificate(message['SigningCertURL']);
 
     if (verifier.verify(certificate, message['Signature'], 'base64')) {
         return message;

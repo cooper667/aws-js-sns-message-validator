@@ -80,7 +80,7 @@ describe('Message Validator', function () {
                     = signer.sign(certHash.serviceKey, 'base64');
             }
 
-            MessageValidator.__set__('getCertificate', (url) => [null, certHash.certificate]);
+            MessageValidator.__set__('getCertificate', (url) => certHash.certificate);
             done();
         });
     });
